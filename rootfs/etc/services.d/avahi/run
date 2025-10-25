@@ -1,0 +1,41 @@
+#!/usr/bin/with-contenv bashio
+# ==============================================================================
+# Home Assistant Add-on: Snapcast
+# Runs the avahi-daemon
+# ==============================================================================
+
+bashio::log.info "=== AVAHI DAEMON DEBUG START ==="
+bashio::log.info "Waiting for D-Bus socket..."
+
+# Wait for dbus
+dbus_elapsed=0
+until [ -e /var/run/dbus/system_bus_socket ]; do
+    sleep 1s
+    dbus_elapsed=$((dbus_elapsed + 1))
+    if [ $dbus_elapsed -ge 30 ]; then
+        bashio::log.error "Timeout waiting for D-Bus socket!"
+        bashio::log.info "D-Bus process status:"
+        ps aux | grep dbus || true
+        bashio::log.info "Checking /var/run/dbus/ directory:"
+        ls -la /var/run/dbus/ 2>&1 || true
+        exit 1
+    fi
+done
+
+bashio::log.info "D-Bus socket ready after ${dbus_elapsed} seconds"
+
+# Check if avahi-daemon exists
+if [ ! -f /usr/sbin/avahi-daemon ]; then
+    bashio::log.error "avahi-daemon not found!"
+    which avahi-daemon 2>&1 || true
+    exit 1
+fi
+
+bashio::log.info "Starting avahi-daemon..."
+bashio::log.info "Config file: /etc/avahi/avahi-daemon.conf"
+
+# Show config for debugging
+bashio::log.info "Avahi configuration:"
+cat /etc/avahi/avahi-daemon.conf 2>&1 || true
+
+exec avahi-daemon --no-drop-root -f /etc/avahi/avahi-daemon.conf --debug

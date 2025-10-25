@@ -1,0 +1,132 @@
+#!/usr/bin/with-contenv bashio
+# ==============================================================================
+# Home Assistant Add-on: Snapcast
+# Runs snapcast server
+# ==============================================================================
+
+bashio::log.info "=== SNAPCAST SERVER DEBUG START ==="
+bashio::log.info "Waiting for Avahi daemon..."
+
+# Wait for Avahi to become available
+elapsed=0
+until [ -e /run/avahi-daemon/pid ]; do
+    sleep 1s
+    elapsed=$((elapsed + 1))
+    if [ $elapsed -ge 30 ]; then
+        bashio::log.error "Timeout waiting for Avahi daemon!"
+        bashio::log.info "Avahi process status:"
+        ps aux | grep avahi || true
+        bashio::log.info "Checking /run/avahi-daemon/ directory:"
+        ls -la /run/avahi-daemon/ 2>&1 || true
+        exit 1
+    fi
+done
+
+bashio::log.info "Avahi daemon ready after ${elapsed} seconds"
+bashio::log.info "Starting snapcast server configuration..."
+
+# Get configuration values
+BUFFER=$(bashio::config 'buffer')
+CODEC=$(bashio::config 'codec')
+SAMPLEFORMAT=$(bashio::config 'sampleformat')
+SEND_TO_MUTED=$(bashio::config 'send_to_muted')
+
+bashio::log.info "Configuration values:"
+bashio::log.info "  BUFFER=${BUFFER}"
+bashio::log.info "  CODEC=${CODEC}"
+bashio::log.info "  SAMPLEFORMAT=${SAMPLEFORMAT}"
+bashio::log.info "  SEND_TO_MUTED=${SEND_TO_MUTED}"
+
+# Generate snapserver configuration
+cat > /etc/snapserver.conf <<EOF
+[stream]
+EOF
+
+# Track if we have any streams
+has_streams=false
+
+# Add custom streams from configuration
+if bashio::config.has_value 'streams'; then
+    for stream in $(bashio::config 'streams|keys'); do
+        SOURCE=$(bashio::config "streams[${stream}].source")
+        NAME=$(bashio::config "streams[${stream}].name")
+        STREAM_SAMPLEFORMAT=$(bashio::config "streams[${stream}].sampleformat")
+        STREAM_CODEC=$(bashio::config "streams[${stream}].codec")
+
+        echo "source = ${SOURCE}" >> /etc/snapserver.conf
+
+        if bashio::var.has_value "${NAME}"; then
+            echo "  &name=${NAME}" >> /etc/snapserver.conf
+        fi
+
+        if bashio::var.has_value "${STREAM_SAMPLEFORMAT}"; then
+            echo "  &sampleformat=${STREAM_SAMPLEFORMAT}" >> /etc/snapserver.conf
+        fi
+
+        if bashio::var.has_value "${STREAM_CODEC}"; then
+            echo "  &codec=${STREAM_CODEC}" >> /etc/snapserver.conf
+        fi
+
+        has_streams=true
+    done
+fi
+
+# If no custom streams defined, create a default pipe stream
+if [ "$has_streams" = false ]; then
+    bashio::log.info "No custom streams configured, creating default pipe stream"
+    echo "source = pipe:///tmp/snapfifo?name=default&mode=create" >> /etc/snapserver.conf
+fi
+
+# Add server configuration
+cat >> /etc/snapserver.conf <<EOF
+
+[server]
+buffer = ${BUFFER}
+codec = ${CODEC}
+sampleformat = ${SAMPLEFORMAT}
+send_to_muted = ${SEND_TO_MUTED}
+
+[http]
+enabled = true
+port = 1780
+doc_root = /usr/share/snapserver/snapweb
+EOF
+
+# Create snapweb config
+mkdir -p /usr/share/snapserver/snapweb
+cat > /usr/share/snapserver/snapweb/config.js <<EOF
+baseUrl = (window.location.protocol === 'https:' ? 'wss://' : 'ws://') + window.location.host + '/jsonrpc';
+EOF
+
+# Log the generated configuration for debugging
+bashio::log.info "=== Generated snapserver.conf ==="
+cat /etc/snapserver.conf
+bashio::log.info "=== End of snapserver.conf ==="
+
+# Check if snapserver binary exists
+if [ ! -f /usr/bin/snapserver ]; then
+    bashio::log.error "snapserver binary not found at /usr/bin/snapserver!"
+    ls -la /usr/bin/snap* 2>&1 || true
+    exit 1
+fi
+
+bashio::log.info "Snapserver binary found, checking version:"
+/usr/bin/snapserver --version 2>&1 || bashio::log.warning "Could not get snapserver version"
+
+# Check network interfaces
+bashio::log.info "Network interfaces:"
+ip addr show 2>&1 || true
+
+# Check if port 1704 is already in use
+bashio::log.info "Checking if port 1704 is already in use:"
+netstat -tuln | grep 1704 || bashio::log.info "Port 1704 is free"
+
+# Check audio devices
+bashio::log.info "Audio devices:"
+ls -la /dev/snd/ 2>&1 || bashio::log.warning "No /dev/snd/ found"
+
+bashio::log.info "=== Starting snapserver process ==="
+bashio::log.info "Command: /usr/bin/snapserver -c /etc/snapserver.conf"
+
+# Run snapserver with verbose logging
+exec /usr/bin/snapserver -c /etc/snapserver.conf --logging.debug

@@ -1,0 +1,22 @@
+#!/usr/bin/with-contenv bashio
+# ==============================================================================
+# Home Assistant Add-on: Snapcast
+# Runs the dbus daemon
+# ==============================================================================
+
+bashio::log.info "=== D-BUS DAEMON DEBUG START ==="
+
+# Check if dbus-daemon exists
+if [ ! -f /usr/bin/dbus-daemon ]; then
+    bashio::log.error "dbus-daemon not found!"
+    which dbus-daemon 2>&1 || true
+    exit 1
+fi
+
+# Create dbus directory if it doesn't exist
+mkdir -p /var/run/dbus
+
+bashio::log.info "Starting dbus-daemon..."
+bashio::log.info "Command: dbus-daemon --system --nofork"
+
+exec dbus-daemon --system --nofork

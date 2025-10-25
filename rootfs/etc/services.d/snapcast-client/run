@@ -1,0 +1,93 @@
+#!/usr/bin/with-contenv bashio
+# ==============================================================================
+# Home Assistant Add-on: Snapcast
+# Runs snapcast client
+# ==============================================================================
+
+bashio::log.info "=== SNAPCAST CLIENT DEBUG START ==="
+bashio::log.info "Waiting for Avahi daemon..."
+
+# Wait for Avahi to become available
+avahi_elapsed=0
+until [ -e /run/avahi-daemon/pid ]; do
+    sleep 1s
+    avahi_elapsed=$((avahi_elapsed + 1))
+    if [ $avahi_elapsed -ge 30 ]; then
+        bashio::log.error "Timeout waiting for Avahi daemon!"
+        exit 1
+    fi
+done
+
+bashio::log.info "Avahi daemon ready after ${avahi_elapsed} seconds"
+
+# Check if snapclient binary exists
+if [ ! -f /usr/bin/snapclient ]; then
+    bashio::log.error "snapclient binary not found at /usr/bin/snapclient!"
+    ls -la /usr/bin/snap* 2>&1 || true
+    exit 1
+fi
+
+bashio::log.info "Snapclient binary found, checking version:"
+/usr/bin/snapclient --version 2>&1 || bashio::log.warning "Could not get snapclient version"
+
+# Check if netcat is available
+if ! command -v nc &> /dev/null; then
+    bashio::log.error "netcat (nc) command not found! Cannot check port availability."
+    bashio::log.info "Installed network tools:"
+    which netcat ncat nc 2>&1 || true
+    bashio::log.info "Falling back to simple sleep..."
+    sleep 15
+else
+    bashio::log.info "netcat found, waiting for snapcast server on port 1704..."
+
+    # Wait for snapcast server to be listening on port 1704
+    timeout=60
+    elapsed=0
+    while [ $elapsed -lt $timeout ]; do
+        # Try netcat with more verbose output
+        if nc -z -v 127.0.0.1 1704 2>&1; then
+            bashio::log.info "Port check returned success at ${elapsed} seconds!"
+            break
+        fi
+
+        # Log every 10 seconds
+        if [ $((elapsed % 10)) -eq 0 ]; then
+            bashio::log.info "Still waiting for port 1704... (${elapsed}s/${timeout}s)"
+            bashio::log.info "Checking snapserver process:"
+            ps aux | grep snapserver | grep -v grep || bashio::log.warning "No snapserver process found"
+            bashio::log.info "Current listening ports:"
+            netstat -tuln 2>&1 | grep LISTEN || true
+        fi
+
+        sleep 1
+        elapsed=$((elapsed + 1))
+    done
+
+    if [ $elapsed -ge $timeout ]; then
+        bashio::log.error "Timeout waiting for snapcast server to start (waited ${timeout}s)"
+        bashio::log.error "Final diagnostics:"
+        bashio::log.error "Snapserver process:"
+        ps aux | grep snapserver || true
+        bashio::log.error "All listening ports:"
+        netstat -tuln || true
+        bashio::log.error "Snapserver logs (if any):"
+        cat /var/log/snapserver.log 2>&1 || bashio::log.info "No log file found"
+        exit 1
+    fi
+
+    bashio::log.info "Snapcast server is ready on port 1704!"
+fi
+
+# Give it one more second to be fully ready
+bashio::log.info "Waiting 2 more seconds for server stabilization..."
+sleep 2
+
+# Check connectivity one more time before starting
+bashio::log.info "Final connectivity check to 127.0.0.1:1704..."
+nc -z -v 127.0.0.1 1704 2>&1 || bashio::log.warning "Final check failed but proceeding anyway"
+
+bashio::log.info "=== Starting snapclient process ==="
+bashio::log.info "Command: /usr/bin/snapclient --host 127.0.0.1 --hostID home-assistant"
+
+# Run snapclient with verbose logging
+exec /usr/bin/snapclient --host 127.0.0.1 --hostID home-assistant --logsink system

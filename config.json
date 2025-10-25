@@ -1,0 +1,50 @@
+{
+  "name": "Snapcast",
+  "version": "1.0.2",
+  "slug": "snapcast",
+  "description": "Snapcast server and client for multi-room audio streaming",
+  "url": "https://github.com/yourusername/snapcast-addon",
+  "startup": "services",
+  "boot": "auto",
+  "arch": ["armhf", "armv7", "aarch64", "amd64", "i386"],
+  "audio": true,
+  "host_network": true,
+  "privileged": ["SYS_ADMIN"],
+  "init": false,
+  "ports": {
+    "1704/tcp": 1704,
+    "1705/tcp": 1705,
+    "1780/tcp": 1780
+  },
+  "ports_description": {
+    "1704/tcp": "Snapcast client connections",
+    "1705/tcp": "Snapcast control interface",
+    "1780/tcp": "Snapcast web interface and websocket"
+  },
+  "ingress": true,
+  "ingress_port": 1780,
+  "panel_icon": "mdi:speaker-multiple",
+  "options": {
+    "buffer": 1000,
+    "codec": "flac",
+    "sampleformat": "48000:16:2",
+    "send_to_muted": false,
+    "streams": [],
+    "log_level": "info"
+  },
+  "schema": {
+    "buffer": "int(10,5000)?",
+    "codec": "list(pcm|flac|vorbis|opus)?",
+    "sampleformat": "str?",
+    "send_to_muted": "bool?",
+    "streams": [
+      {
+        "source": "str?",
+        "name": "str?",
+        "sampleformat": "str?",
+        "codec": "str?"
+      }
+    ],
+    "log_level": "list(trace|debug|info|notice|warning|error|fatal)?"
+  }
+}
