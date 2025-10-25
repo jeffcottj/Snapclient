@@ -1,6 +1,6 @@
 # Snapcast Add-on for Home Assistant
 
-Snapcast server and client for multi-room audio streaming with Music Assistant integration. Similar to the add-on available to the store, but without Spotify Connect functionality so that you can use Music Assistant's Spotify Connect plugin instead.
+Snapcast server and client for multi-room audio streaming with Music Assistant integration. Similar to the add-on available in the HA store, but without Spotify Connect functionality so that you can use Music Assistant's Spotify Connect plugin instead.
 
 ## Features
 
